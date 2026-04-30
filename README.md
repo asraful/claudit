@@ -85,6 +85,118 @@ claudit --json stats         # JSON output, pipe to jq / scripts
 
 Run `claudit --help` or `claudit <subcommand> --help` for full options.
 
+### Example output
+
+`claudit stats` — today vs all-time summary:
+
+```
+$ claudit stats
+CLAUDE_DIR : /Users/asraful/.claude
+Days seen  : 3
+
+All-time
+--------
+  Sessions   : 7
+  Messages   : 293
+  Tool calls : 228
+  Input tok  : 2,938
+  Output tok : 928,094
+  Cache read : 42,676,419
+  Cache write: 2,730,276
+  Est. cost  : $61.62
+  Cache hit  : 94.0%
+
+Today (2026-04-30)
+--------
+  Sessions   : 2
+  Messages   : 72
+  Tool calls : 59
+  Est. cost  : $25.41
+```
+
+`claudit daily` — per-day token + cost breakdown:
+
+```
+$ claudit daily
+date        sess  msgs  tools  input   output      c.read    c.write    cost
+----------  ----  ----  -----  -----  -------  ----------  ---------  ------
+2026-04-28     4   205    161    657  433,388  26,950,363  1,712,809  $35.02
+2026-04-29     1    16      8     30    4,134     216,453    156,099   $1.19
+2026-04-30     2    72     59  2,251  490,572  15,509,603    861,368  $25.41
+TOTAL          7   293    228  2,938  928,094  42,676,419  2,730,276  $61.62
+```
+
+`claudit tools` — which tools Claude reaches for most:
+
+```
+$ claudit tools
+tool   count  share
+-----  -----  -----
+Bash     120  52.6%
+Read      77  33.8%
+Edit      18   7.9%
+Write     12   5.3%
+Agent      1   0.4%
+```
+
+`claudit --json daily | jq` — same data, machine-readable:
+
+```json
+{
+  "days": [
+    {
+      "date": "2026-04-28",
+      "messages": 205,
+      "toolCalls": 161,
+      "sessions": 4,
+      "input": 657,
+      "output": 433388,
+      "cacheRead": 26950363,
+      "cacheCreate": 1712809,
+      "cost": 35.02
+    },
+    {
+      "date": "2026-04-29",
+      "messages": 16,
+      "toolCalls": 8,
+      "sessions": 1,
+      "input": 30,
+      "output": 4134,
+      "cacheRead": 216453,
+      "cacheCreate": 156099,
+      "cost": 1.19
+    },
+    {
+      "date": "2026-04-30",
+      "messages": 72,
+      "toolCalls": 59,
+      "sessions": 2,
+      "input": 2251,
+      "output": 490572,
+      "cacheRead": 15509603,
+      "cacheCreate": 861368,
+      "cost": 25.41
+    }
+  ],
+  "totals": {
+    "messages": 293,
+    "toolCalls": 228,
+    "sessions": 7,
+    "input": 2938,
+    "output": 928094,
+    "cacheRead": 42676419,
+    "cacheCreate": 2730276,
+    "cost": 61.62
+  },
+  "rates": {
+    "input": 0.000005,
+    "output": 0.000025,
+    "cacheRead": 5e-7,
+    "cacheCreate": 6.25e-6
+  }
+}
+```
+
 > **Tip on `--project`:** Claude Code's project directories start with a dash (e.g. `-Users-foo-myapp`). `argparse` will treat that as a flag unless you pass it with `=`:
 >
 > ```bash
