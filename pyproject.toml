@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claudit"
-version = "0.1.0"
+version = "0.1.1"
 description = "Audit your Claude Code usage from the terminal — sessions, tokens, cost, cache, tool calls."
 readme = "README.md"
 requires-python = ">=3.8"

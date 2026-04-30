@@ -92,6 +92,33 @@ def fmt_money(n) -> str:
         return str(n)
 
 # ---------------------------------------------------------------------------
+# Timestamp normalization
+# ---------------------------------------------------------------------------
+
+def ts_to_iso(ts) -> str:
+    """Coerce a timestamp to an ISO string (UTC).
+
+    Claude Code has shipped both shapes over time:
+      - ISO 8601 strings: '2026-04-30T10:11:12.345Z'
+      - Integer/float epoch (seconds or milliseconds)
+
+    Returns '' for None/missing/unparseable, so downstream slicing is safe.
+    """
+    if ts is None or ts == "":
+        return ""
+    if isinstance(ts, str):
+        return ts
+    if isinstance(ts, (int, float)):
+        try:
+            secs = ts / 1000.0 if ts > 1e12 else float(ts)
+            return datetime.fromtimestamp(secs, tz=timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            )
+        except (ValueError, OSError, OverflowError):
+            return ""
+    return str(ts)
+
+# ---------------------------------------------------------------------------
 # JSONL helpers
 # ---------------------------------------------------------------------------
 
@@ -125,7 +152,7 @@ def aggregate_daily(projects_dir: Path) -> dict:
     daily: dict = {}
     for fp in find_jsonl(projects_dir):
         for obj in iter_jsonl(fp):
-            ts = obj.get("timestamp")
+            ts = ts_to_iso(obj.get("timestamp"))
             if not ts:
                 continue
             day = ts[:10]
@@ -217,7 +244,7 @@ def project_summary(history_path: Path) -> list[dict]:
         sid = obj.get("sessionId")
         if sid:
             p["sessions"].add(sid)
-        ts = obj.get("timestamp")
+        ts = ts_to_iso(obj.get("timestamp"))
         if ts:
             if not p["firstSeen"] or ts < p["firstSeen"]:
                 p["firstSeen"] = ts
@@ -353,32 +380,81 @@ def cmd_history(args) -> int:
         if len(disp) > 80:
             disp = disp[:77] + "..."
         rows.append([
-            (e.get("timestamp") or "")[:19],
+            ts_to_iso(e.get("timestamp"))[:19],
             (e.get("project") or "").rsplit("/", 1)[-1],
             disp,
         ])
     print(render_table(["timestamp", "project", "prompt"], rows))
     return 0
 
-def cmd_sessions(args) -> int:
-    cd = claude_dir()
-    sess_dir = cd / "sessions"
+def sessions_from_dir(sess_dir: Path) -> list[dict]:
+    """Read sessions from $CLAUDE_DIR/sessions/*.json (older Claude Code)."""
+    out = []
     if not sess_dir.exists():
-        print("No sessions directory at", sess_dir)
-        return 0
-    sessions = []
+        return out
     for f in sorted(sess_dir.glob("*.json")):
         try:
-            sessions.append(json.loads(f.read_text()))
+            obj = json.loads(f.read_text())
         except Exception:
             continue
+        out.append({
+            "id":      obj.get("id") or obj.get("sessionId") or f.stem,
+            "created": ts_to_iso(obj.get("createdAt") or obj.get("timestamp")),
+            "project": obj.get("project") or obj.get("cwd") or "",
+            "messages": obj.get("messages") or 0,
+        })
+    return out
+
+def sessions_from_transcripts(projects_dir: Path) -> list[dict]:
+    """Derive sessions from projects/<project>/**/*.jsonl on newer Claude Code."""
+    by_id: dict = {}
+    if not projects_dir.exists():
+        return []
+    for proj_dir in sorted(p for p in projects_dir.iterdir() if p.is_dir()):
+        for fp in find_jsonl(proj_dir):
+            for obj in iter_jsonl(fp):
+                sid = obj.get("sessionId")
+                if not sid:
+                    continue
+                ts = ts_to_iso(obj.get("timestamp"))
+                s = by_id.setdefault(sid, {
+                    "id": sid, "project": proj_dir.name,
+                    "first": "", "last": "", "messages": 0,
+                })
+                if obj.get("type") == "user":
+                    s["messages"] += 1
+                if ts:
+                    if not s["first"] or ts < s["first"]:
+                        s["first"] = ts
+                    if not s["last"] or ts > s["last"]:
+                        s["last"] = ts
+    out = sorted(by_id.values(), key=lambda x: x["last"], reverse=True)
+    # Match shape of sessions_from_dir as much as possible
+    return [{
+        "id": s["id"], "created": s["first"], "lastSeen": s["last"],
+        "project": s["project"], "messages": s["messages"],
+    } for s in out]
+
+def cmd_sessions(args) -> int:
+    cd = claude_dir()
+    sessions = sessions_from_dir(cd / "sessions")
+    source = "sessions/"
+    if not sessions:
+        sessions = sessions_from_transcripts(cd / "projects")
+        source = "projects/ transcripts"
     if args.json:
-        print(json.dumps(sessions, indent=2))
+        print(json.dumps({"source": source, "sessions": sessions}, indent=2))
         return 0
-    rows = [[s.get("id") or s.get("sessionId") or "?",
-             (s.get("createdAt") or s.get("timestamp") or "")[:19],
-             s.get("project") or s.get("cwd") or ""] for s in sessions]
-    print(render_table(["id", "created", "project"], rows))
+    if not sessions:
+        print(f"No session data found in {cd / 'sessions'} or {cd / 'projects'}.")
+        return 0
+    rows = [[s["id"][:12], (s.get("created") or "")[:19],
+             (s.get("lastSeen") or "")[:19], fmt_int(s.get("messages") or 0),
+             s.get("project") or ""] for s in sessions]
+    print(f"# source: {source}")
+    print(render_table(
+        ["id", "first seen", "last seen", "msgs", "project"], rows,
+        ["left", "left", "left", "right", "left"]))
     return 0
 
 def cmd_projects(args) -> int:
@@ -391,7 +467,7 @@ def cmd_projects(args) -> int:
         print("No project data found in history.jsonl.")
         return 0
     rows = [[p["shortName"], fmt_int(p["messages"]), fmt_int(p["sessions"]),
-             (p["firstSeen"] or "")[:10], (p["lastSeen"] or "")[:10]]
+             ts_to_iso(p["firstSeen"])[:10], ts_to_iso(p["lastSeen"])[:10]]
             for p in projs]
     print(render_table(
         ["project", "msgs", "sess", "first", "last"], rows,
