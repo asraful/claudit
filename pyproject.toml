@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claudit"
+version = "0.1.0"
+description = "Audit your Claude Code usage from the terminal — sessions, tokens, cost, cache, tool calls."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "asraful" }]
+keywords = ["claude", "claude-code", "cli", "usage", "cost", "analytics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+dependencies = []  # stdlib only
+
+[project.urls]
+Homepage = "https://github.com/asraful/claudit"
+Issues   = "https://github.com/asraful/claudit/issues"
+
+[project.scripts]
+claudit = "claudit:main"
+
+[tool.setuptools]
+py-modules = ["claudit"]
